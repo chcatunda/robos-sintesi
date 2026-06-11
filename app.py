@@ -8,21 +8,29 @@ def extrair_relatorio_sgcor_api(usuario, senha, tipo_relatorio, data_ini, data_f
     # Cria uma sessão de navegação virtual limpa
     session = requests.Session()
     
-    # URL de login do SGCOR (Mapeamento do formulário)
-    url_login = "https://sistema.sgcor.com.br/login" 
+    # Descobre o domínio correto do SGCOR com base no e-mail (ex: corporativo ou padrão)
+    dominio_base = "sgcor.com.br"
+    if "@" in usuario:
+        empresa = usuario.split("@")[1].split(".")[0]
+        # Se for um e-mail comum (gmail/outlook), usa o servidor padrão, senão tenta o subdomínio
+        if empresa not in ["gmail", "outlook", "hotmail", "yahoo", "live"]:
+            dominio_base = f"{empresa}.sgcor.com.br"
+
+    # URL de login ajustada dinamicamente
+    url_login = f"https://{dominio_base}/login" 
     payload_login = {
         "email": usuario,
         "password": senha
     }
     
-    print("🔐 Fazendo login no SGCOR...")
+    # Realiza o Login
     response = session.post(url_login, data=payload_login)
     
     # Define os caminhos corretos com base no tipo de relatório selecionado
     if tipo_relatorio == "Produção":
-        url_relatorio = "https://sistema.sgcor.com.br/relatorios/producao-anual/exportar"
+        url_relatorio = f"https://{dominio_base}/relatorios/producao-anual/exportar"
     else:
-        url_relatorio = "https://sistema.sgcor.com.br/relatorios/comissoes/exportar"
+        url_relatorio = f"https://{dominio_base}/relatorios/comissoes/exportar"
         
     filtros = {
         "data_inicial": data_ini,
@@ -30,17 +38,17 @@ def extrair_relatorio_sgcor_api(usuario, senha, tipo_relatorio, data_ini, data_f
         "formato": "excel"
     }
     
-    print("📥 Solicitando o arquivo Excel ao SGCOR...")
+    # Solicita o Download
     download = session.get(url_relatorio, params=filtros)
     
-    # Nomeia o arquivo temporariamente na nuvem
+    # Nomeia e salva o arquivo temporariamente na nuvem
     nome_arquivo = f"Relatorio_{tipo_relatorio}_{data_ini.replace('/','-')}.xlsx"
     caminho_temporario = os.path.join("/tmp", nome_arquivo)
     
     with open(caminho_temporario, "wb") as f:
         f.write(download.content)
         
-    return camino_temporario
+    return caminho_temporario
 
 # --- INTERFACE WEB DO STREAMLIT ---
 st.set_page_config(page_title="Sintesi Corretora - SGCOR", page_icon="📊")
