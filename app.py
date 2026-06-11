@@ -1,60 +1,71 @@
 import streamlit as st
-import requests
-from bs4 import BeautifulSoup
-import io
+import os
+import time
 from datetime import datetime
+from DrissionPage import ChromiumOptions, ChromiumPage
 
-# --- FUNÇÃO DO ROBÔ SGCOR SUPER ESTÁVEL ---
-def extrair_relatorio_sgcor_estavel(usuario, senha, tipo_relatorio, data_ini, data_fim):
-    # Inicia uma sessão de navegação virtual
-    session = requests.Session()
+# --- FUNÇÃO DO ROBÔ SGCOR COM NAVEGADOR ULTRA LEVE ---
+def executar_download_sgcor(usuario, senha, tipo_relatorio, data_ini, data_fim):
+    # Configura o navegador para rodar em modo invisível (headless) na nuvem
+    co = ChromiumOptions()
+    co.set_argument('--headless')
+    co.set_argument('--no-sandbox')
     
-    # URL base do sistema SGCOR
-    url_base = "https://sistema.sgcor.com.br"
+    # Pasta temporária para salvar o arquivo Excel
+    pasta_download = "/tmp"
+    co.set_paths(download_path=pasta_download)
     
-    # 1. Abre a página de login para capturar tokens de segurança se houver
-    print("Conectando ao SGCOR...")
-    pagina_login = session.get(f"{url_base}/login")
-    soup = BeautifulSoup(pagina_login.text, 'html.parser')
+    # Inicializa o navegador virtual
+    page = ChromiumPage(co)
     
-    # Procura por campos ocultos de segurança (ex: _token) comuns em sistemas web
-    token = soup.find('input', {'name': '_token'})
-    token_valor = token['value'] if token else ''
-    
-    # Dados para enviar no formulário de Login
-    payload_login = {
-        "_token": token_valor,
-        "email": usuario,
-        "password": senha
-    }
-    
-    # 2. Realiza o Login real
-    print("Realizando autenticação...")
-    resposta_login = session.post(f"{url_base}/login", data=payload_login)
-    
-    # 3. Define a rota interna do relatório escolhido
-    if tipo_relatorio == "Produção":
-        url_relatorio = f"{url_base}/relatorios/producao-anual/exportar"
-    else:
-        url_relatorio = f"{url_base}/relatorios/comissoes/exportar"
+    try:
+        # 1. Acessa a página de login do SGCOR
+        page.get("https://sistema.sgcor.com.br/login")
+        time.sleep(2)
         
-    filtros = {
-        "data_inicial": data_ini,
-        "data_final": data_fim,
-        "formato": "excel"
-    }
-    
-    # 4. Faz a requisição do arquivo Excel direto para a memória do Streamlit
-    print("Baixando planilha...")
-    download = session.get(url_relatorio, params=filtros)
-    
-    if download.status_code == 405 or download.status_code == 404:
-        raise Exception("O SGCOR recusou o formato de requisição direta. Verifique os dados ou o link.")
+        # 2. Preenche o e-mail e a senha nos campos corretos
+        page.ele("css:input[type='email']").input(usuario)
+        page.ele("css:input[type='password']").input(senha)
         
-    if len(download.content) < 500:
-        raise Exception("Dados inválidos retornados. Verifique se seu e-mail e senha estão corretos.")
+        # 3. Clica no botão de Entrar
+        page.ele("css:button[type='submit']").click()
+        time.sleep(4)
         
-    return download.content
+        # 4. Vai direto para a página de relatórios
+        page.get("https://sistema.sgcor.com.br/relatorios")
+        time.sleep(2)
+        
+        if tipo_relatorio == "Produção":
+            page.ele("text:Produção Anual").click()
+        else:
+            page.ele("text:Extrato de Comissões").click()
+        time.sleep(2)
+        
+        # 5. Preenche as datas dos filtros
+        page.ele("#data_inicial").clear()
+        page.ele("#data_inicial").input(data_ini)
+        page.ele("#data_final").clear()
+        page.ele("#data_final").input(data_fim)
+        
+        # 6. Dispara o botão para Gerar e aguarda o download concluir
+        page.ele("xpath://button[contains(text(), 'Gerar')]").click()
+        time.sleep(7)
+        
+        # Procura o arquivo .xlsx gerado na pasta temporária
+        arquivos = os.listdir(pasta_download)
+        arquivo_excel = None
+        for arq in arquivos:
+            if arq.endswith(".xlsx") or arq.endswith(".xls"):
+                arquivo_excel = os.path.join(pasta_download, arq)
+                break
+                
+        if not arquivo_excel:
+            raise Exception("O SGCOR demorou a responder ou os dados de login estão incorretos.")
+            
+        return arquivo_excel
+
+    finally:
+        page.quit()
 
 # --- INTERFACE WEB DO STREAMLIT ---
 st.set_page_config(page_title="Sintesi Corretora - SGCOR", page_icon="📊")
@@ -75,23 +86,24 @@ if st.button("🚀 Disparar Extração SGCOR", use_container_width=True):
     if not user_sgcor or not pass_sgcor:
         st.warning("Por favor, preencha seu usuário e senha do SGCOR.")
     else:
-        with st.spinner("O robô está processando os dados no SGCOR... Aguarde..."):
+        with st.spinner("O robô está abrindo o SGCOR e recolhendo a sua planilha... Aguarde..."):
             try:
                 d_ini = data_inicio.strftime("%d/%m/%Y")
                 d_fim = data_fim.strftime("%d/%m/%Y")
                 
-                # Executa o extrator leve
-                conteudo_planilha = extrair_relatorio_sgcor_estavel(user_sgcor, pass_sgcor, tipo, d_ini, d_fim)
+                # Executa o robô navegador invisível
+                caminho_arquivo = executar_download_sgcor(user_sgcor, pass_sgcor, tipo, d_ini, d_fim)
                 
                 nome_final = f"Relatorio_{tipo}_{d_ini.replace('/','-')}.xlsx"
                 
-                st.success("✅ Relatório gerado com sucesso!")
-                st.download_button(
-                    label="📥 Clique aqui para Baixar o Arquivo Excel",
-                    data=conteudo_planilha,
-                    file_name=nome_final,
-                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                    use_container_width=True
-                )
+                with open(caminho_arquivo, "rb") as file:
+                    st.success("✅ Relatório gerado com sucesso!")
+                    st.download_button(
+                        label="📥 Clique aqui para Baixar o Arquivo Excel",
+                        data=file,
+                        file_name=nome_final,
+                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                        use_container_width=True
+                    )
             except Exception as e:
                 st.error(f"❌ Status do Robô: {e}")
