@@ -2,8 +2,8 @@ import streamlit as st
 import requests
 from datetime import datetime
 
-# --- FUNÇÃO DO ROBÔ INTEGRADO SGCOR (MÉTODO ORIGINAL QUE FUNCIONOU) ---
-def extrair_relatorio_sgcor_direto(usuario, senha, tipo_relatorio, data_ini, data_fim):
+# --- FUNÇÃO DO ROBÔ TOTALMENTE MAPEADA PELO CÓDIGO FONTE ---
+def extrair_tombamento_carteira_sgcor(usuario, senha, data_ini, data_fim, ramo_id, filtrar_por):
     session = requests.Session()
     
     url_base = "https://sintesi.sgcor.com.br"
@@ -16,69 +16,98 @@ def extrair_relatorio_sgcor_direto(usuario, senha, tipo_relatorio, data_ini, dat
         "Referer": url_base
     })
     
-    # 1. Captura a página inicial para cookies (Exatamente como o primeiro código)
+    # 1. Abre a página inicial (Método original que funciona)
     session.get(url_base)
     
-    # 2. Payload original que deu certo
+    # 2. Payload de autenticação original
     payload_login = {
         "username": usuario,
         "password": senha,
         "op": "login_validar"
     }
     
-    # 3. Faz o Login original
+    # 3. Realiza o login na Sintesi
     session.post(url_login, data=payload_login)
     
-    # 4. Define as rotas internas mudando para a exportação nativa em CSV
-    if tipo_relatorio == "Produção":
-        url_relatorio = f"{url_base}/index.php?op=relatorios&form=producao_anual&exportar=csv"
-    else:
-        url_relatorio = f"{url_base}/index.php?op=relatorios&form=comissoes&exportar=csv"
-        
-    url_relatorio += f"&data_inicial={data_ini}&data_final={data_fim}"
+    # 4. ROTA EXATA EXTRAÍDA DO SGCOR DO CARLOS (Usa ajax.php e as variáveis corretas)
+    url_exportar = f"{url_base}/ajax.php?opRel=tombamentoCarteira&acao=gerar"
     
-    # 5. Solicita a planilha
-    download = session.get(url_relatorio)
+    # Dados exatos que o formulário do SGCOR envia quando você clica em "Gerar CSV"
+    payload_relatorio = {
+        "tipoRel": "TC01",
+        "periodo": data_ini,        # Data Inicial (dd/mm/aaaa)
+        "periodo2": data_fim,       # Data Final (dd/mm/aaaa)
+        "ramoId": ramo_id,          # ID do Ramo selecionado
+        "filtrarPor": filtrar_por,  # Filtro de data escolhido
+        "corretorId": "1",          # Trava automática na Sintesi Corretora
+        "companhiaId": "",          # Todos(as)
+        "produtorRepasse": "",      # Todos(as)
+        "grafico": "",
+        "csv": "t"                  # 't' ativa o download nativo em formato CSV!
+    }
+    
+    # 5. Faz a requisição POST simulando o clique do botão "Gerar CSV"
+    download = session.post(url_exportar, data=payload_relatorio)
     
     if download.status_code != 200:
-        raise Exception("Não foi possível conectar ao SGCOR para gerar o relatório.")
+        raise Exception("O servidor do SGCOR não respondeu corretamente ao pedido do relatório.")
         
     return download.content
 
-# --- INTERFACE WEB DO STREAMLIT ---
+# --- INTERFACE WEB DO STREAMLIT (SINTESI) ---
 st.set_page_config(page_title="Sintesi Corretora - SGCOR", page_icon="📊")
 
-st.title("📊 Extrator de Relatórios SGCOR")
-st.write("Aceda e descarregue os seus relatórios direto pelo seu navegador.")
+st.title("📊 Extrator Gerencial - Tombamento de Carteira")
+st.write("Gere e baixe seu relatório legítimo em CSV de forma automatizada.")
 
-tipo = st.selectbox("Qual relatório deseja?", ["Produção", "Comissões"])
+# Seletores visuais idênticos aos do SGCOR
+filtrar_por = st.selectbox(
+    "Filtrar datas por:",
+    ["dataVigenciaInicial", "dataVigenciaFinal", "dataEmitida"],
+    format_func=lambda x: "Início de Vigência" if x == "dataVigenciaInicial" else "Final de Vigência" if x == "dataVigenciaFinal" else "Emissão da Apólice"
+)
 
-data_inicio = st.date_input("Data Inicial", datetime.today())
-data_fim = st.date_input("Data Final", datetime.today())
+# Mapeamento dos ramos principais do seu sistema
+ramos_disponiveis = {
+    "7": "AUTOMÓVEL",
+    "62": "ACIDENTES PESSOAIS INDIVIDUAL",
+    "70": "AGRÍCOLA",
+    "65": "FROTA",
+    "19": "RESIDENCIAL",
+    "20": "EMPRESARIAL",
+    "74": "TRANSPORTE",
+    "61": "PLANO DE SAUDE",
+    "40": "VIDA EM GRUPO"
+}
+ramo_selecionado = st.selectbox("Selecione o Ramo:", list(ramos_disponiveis.keys()), format_func=lambda x: ramos_disponiveis[x])
+
+data_inicio = st.date_input("Período Inicial", datetime.today())
+data_fim = st.date_input("Período Final", datetime.today())
 
 st.divider()
-st.subheader("🔑 Credenciais do SGCOR")
 
-# 🔒 CREDENCIAIS CONFIGURADAS DIRETAMENTE NO SISTEMA:
+# 🔒 DADOS DE ACESSO FIXOS DO CARLOS (PRONTOS E TRANCADOS)
 user_sgcor = "chcatunda"
 pass_sgcor = "Cretapoi@8755"
 
-st.info("🔒 Os seus dados de acesso já estão configurados no robô.")
+st.info("🔒 Credenciais de acesso chcatunda configuradas com sucesso.")
 
 if st.button("🚀 Disparar Extração SGCOR", use_container_width=True):
-    with st.spinner("A conectar ao SGCOR da Sintesi e a preparar o seu arquivo..."):
+    with st.spinner("Conectando ao SGCOR e processando o Tombamento de Carteira..."):
         try:
+            # Formatação de datas padrão Brasil exigida pelo SGCOR
             d_ini = data_inicio.strftime("%d/%m/%Y")
             d_fim = data_fim.strftime("%d/%m/%Y")
             
-            # Executa a extração com o método antigo de login
-            conteudo_csv = extrair_relatorio_sgcor_direto(user_sgcor, pass_sgcor, tipo, d_ini, d_fim)
+            # Puxa o conteúdo binário do CSV processado pelo ajax.php
+            conteudo_csv = extrair_tombamento_carteira_sgcor(
+                user_sgcor, pass_sgcor, d_ini, d_fim, ramo_selecionado, filtrar_por
+            )
             
-            nome_final = f"Relatorio_{tipo}_{d_ini.replace('/','-')}_a_{d_fim.replace('/','-')}.csv"
+            nome_final = f"Tombamento_Carteira_{d_ini.replace('/','-')}_a_{d_fim.replace('/','-')}.csv"
             
-            st.success("✅ Relatório gerado com sucesso!")
+            st.success("✅ CSV Gerado com Sucesso pelo Motor Interno!")
             
-            # Botão configurado estritamente para o formato CSV que você precisa
             st.download_button(
                 label="📥 Clique aqui para Baixar o Arquivo CSV",
                 data=conteudo_csv,
@@ -87,4 +116,4 @@ if st.button("🚀 Disparar Extração SGCOR", use_container_width=True):
                 use_container_width=True
             )
         except Exception as e:
-            st.error(f"❌ Ocorreu um problema: {e}")
+            st.error(f"❌ Falha no processamento: {e}")
