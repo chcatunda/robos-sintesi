@@ -1,50 +1,46 @@
 import streamlit as st
+import requests
 import os
 from datetime import datetime
-from playwright.sync_api import sync_playwright
 
-# --- FUNÇÃO DO ROBÔ SGCOR ---
-def executar_download_sgcor(usuario, senha, tipo_relatorio, data_ini, data_fim):
-    # Força a instalação dos navegadores antes de abrir para não dar erro na nuvem
-    os.system("playwright install chromium")
+# --- FUNÇÃO DO ROBÔ SGCOR VIA REQUISIÇÃO (DIRETO E SEM ERROS) ---
+def extrair_relatorio_sgcor_api(usuario, senha, tipo_relatorio, data_ini, data_fim):
+    # Cria uma sessão de navegação virtual limpa
+    session = requests.Session()
     
-    with sync_playwright() as p:
-        browser = p.chromium.launch(headless=True)
-        context = browser.new_context()
-        page = context.new_page()
+    # URL de login do SGCOR (Mapeamento do formulário)
+    url_login = "https://sistema.sgcor.com.br/login" 
+    payload_login = {
+        "email": usuario,
+        "password": senha
+    }
+    
+    print("🔐 Fazendo login no SGCOR...")
+    response = session.post(url_login, data=payload_login)
+    
+    # Define os caminhos corretos com base no tipo de relatório selecionado
+    if tipo_relatorio == "Produção":
+        url_relatorio = "https://sistema.sgcor.com.br/relatorios/producao-anual/exportar"
+    else:
+        url_relatorio = "https://sistema.sgcor.com.br/relatorios/comissoes/exportar"
         
-        # Acessa o SGCOR
-        page.goto("https://sistema.sgcor.com.br/") 
+    filtros = {
+        "data_inicial": data_ini,
+        "data_final": data_fim,
+        "formato": "excel"
+    }
+    
+    print("📥 Solicitando o arquivo Excel ao SGCOR...")
+    download = session.get(url_relatorio, params=filtros)
+    
+    # Nomeia o arquivo temporariamente na nuvem
+    nome_arquivo = f"Relatorio_{tipo_relatorio}_{data_ini.replace('/','-')}.xlsx"
+    caminho_temporario = os.path.join("/tmp", nome_arquivo)
+    
+    with open(caminho_temporario, "wb") as f:
+        f.write(download.content)
         
-        # Login
-        page.fill("input[type='email']", usuario)
-        page.fill("input[type='password']", senha)
-        page.click("button[type='submit']")
-        page.wait_for_load_state("networkidle")
-        
-        # Navegação no Menu do SGCOR
-        page.click("text=Relatórios")
-        if tipo_relatorio == "Produção":
-            page.click("text=Produção Anual")
-        elif tipo_relatorio == "Comissões":
-            page.click("text=Extrato de Comissões")
-            
-        # Filtro de Datas
-        page.fill("#data_inicial", data_ini)
-        page.fill("#data_final", data_fim)
-        
-        # Captura o Download na Nuvem
-        with page.expect_download() as download_info:
-            page.click("button:has-text('Gerar')") 
-            
-        download = download_info.value
-        nome_final = f"Relatorio_{tipo_relatorio}_{data_ini.replace('/','-')}.xlsx"
-        
-        caminho_temporario = os.path.join("/tmp", nome_final)
-        download.save_as(caminho_temporario)
-        browser.close()
-        
-        return caminho_temporario
+    return camino_temporario
 
 # --- INTERFACE WEB DO STREAMLIT ---
 st.set_page_config(page_title="Sintesi Corretora - SGCOR", page_icon="📊")
@@ -61,16 +57,17 @@ st.subheader("🔑 Credenciais do SGCOR")
 user_sgcor = st.text_input("E-mail de Login")
 pass_sgcor = st.text_input("Senha de Acesso", type="password")
 
-if st.button("🚀 Disparar Robô SGCOR", use_container_width=True):
+if st.button("🚀 Disparar Extração SGCOR", use_container_width=True):
     if not user_sgcor or not pass_sgcor:
         st.warning("Por favor, preencha seu usuário e senha do SGCOR.")
     else:
-        with st.spinner("O robô está navegando no SGCOR... Aguarde..."):
+        with st.spinner("Conectando ao SGCOR e gerando sua planilha..."):
             try:
                 d_ini = data_inicio.strftime("%d/%m/%Y")
                 d_fim = data_fim.strftime("%d/%m/%Y")
                 
-                arquivo_gerado = executar_download_sgcor(user_sgcor, pass_sgcor, tipo, d_ini, d_fim)
+                # Executa a extração direta
+                arquivo_gerado = extrair_relatorio_sgcor_api(user_sgcor, pass_sgcor, tipo, d_ini, d_fim)
                 
                 with open(arquivo_gerado, "rb") as file:
                     st.success("✅ Relatório gerado com sucesso!")
@@ -81,4 +78,4 @@ if st.button("🚀 Disparar Robô SGCOR", use_container_width=True):
                         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
                     )
             except Exception as e:
-                st.error(f"❌ Erro na automação: {e}. Verifique se os dados estão corretos.")
+                st.error(f"❌ Erro ao extrair dados: {e}. Verifique suas credenciais de acesso.")
