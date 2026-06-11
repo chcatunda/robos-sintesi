@@ -4,8 +4,7 @@ from datetime import datetime
 
 # --- FUNÇÃO DO ROBÔ INTEGRADO SGCOR (MÉTODO REFORÇADO) ---
 def extrair_relatorio_sgcor_csv_nativo(usuario, senha, tipo_relatorio, data_ini, data_fim):
-    session = requests.Session()
-    
+    session = requests.Session()a
     url_base = "https://sintesi.sgcor.com.br"
     url_login = f"{url_base}/index.php?op=login"
     
