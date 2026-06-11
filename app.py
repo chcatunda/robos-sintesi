@@ -1,4 +1,3 @@
-```python
 import streamlit as st
 import os
 from datetime import datetime
@@ -6,6 +5,9 @@ from playwright.sync_api import sync_playwright
 
 # --- FUNÇÃO DO ROBÔ SGCOR ---
 def executar_download_sgcor(usuario, senha, tipo_relatorio, data_ini, data_fim):
+    # Força a instalação dos navegadores antes de abrir para não dar erro na nuvem
+    os.system("playwright install chromium")
+    
     with sync_playwright() as p:
         browser = p.chromium.launch(headless=True)
         context = browser.new_context()
