@@ -4,16 +4,21 @@ import re
 import os
 from datetime import datetime
 
-# --- FUNÇÃO DO ROBÔ INTEGRADO COMPATÍVEL COM A NUVEM ---
+# --- FUNÇÃO DO ROBÔ INTEGRADO COM LINK FIXO ---
 def extrair_relatorio_sgcor_direto(usuario, senha, tipo_relatorio, data_ini, data_fim):
     # Cria uma sessão de navegação virtual limpa
     session = requests.Session()
     
-    # URL oficial de login do SGCOR
-    url_base = "https://sistema.sgcor.com.br"
+    # =========================================================================
+    # ⚠️ CARLOS, ATENÇÃO AQUI: Substitua o link abaixo pelo link real que você 
+    # usa no seu navegador para entrar no SGCOR da Sintesi (ex: sintesi.sgcor.com.br)
+    # =========================================================================
+    link_oficial_sgcor = "sistema.sgcor.com.br" 
+    
+    url_base = f"https://{link_oficial_sgcor}"
     url_login = f"{url_base}/login"
     
-    # Simula o cabeçalho de um navegador real para o SGCOR autorizar o acesso
+    # Cabeçalho de simulação de navegador
     session.headers.update({
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
         "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8",
@@ -21,10 +26,9 @@ def extrair_relatorio_sgcor_direto(usuario, senha, tipo_relatorio, data_ini, dat
         "Referer": url_login
     })
     
-    # 1. Abre a página inicial para capturar defesas internas do sistema
+    # 1. Captura o token de segurança da página inicial de login
     resposta_inicial = session.get(url_login)
     
-    # Coleta cookies ou tokens se existirem no formulário
     token_busca = re.search(r'name="_token"\s+value="([^"]+)"', resposta_inicial.text)
     token_valor = token_busca.group(1) if token_busca else ""
     
@@ -34,15 +38,14 @@ def extrair_relatorio_sgcor_direto(usuario, senha, tipo_relatorio, data_ini, dat
         "password": senha
     }
     
-    # 2. Faz o Login direto no sistema da Sintesi
+    # 2. Faz o Login direto
     resposta_autenticacao = session.post(url_login, data=payload_login)
     
-    # Verifica se o login foi aceito ou se parou na tela de erro
     if "login" in resposta_autenticacao.url and resposta_inicial.status_code == 200:
          if "error" in resposta_autenticacao.text or "credenciais" in resposta_autenticacao.text:
              raise Exception("Usuário ou senha inválidos no SGCOR.")
     
-    # 3. Define a rota exata de exportação do Excel
+    # 3. Define as rotas internas de exportação do Excel
     if tipo_relatorio == "Produção":
         url_relatorio = f"{url_base}/relatorios/producao-anual/exportar"
     else:
@@ -54,11 +57,11 @@ def extrair_relatorio_sgcor_direto(usuario, senha, tipo_relatorio, data_ini, dat
         "formato": "excel"
     }
     
-    # 4. Solicita a planilha e guarda o resultado direto na memória da nuvem
+    # 4. Solicita a planilha direto para a memória
     download = session.get(url_relatorio, params=filtros)
     
     if download.status_code != 200 or len(download.content) < 1000:
-        raise Exception("Não foi possível gerar o relatório. Verifique o período selecionado ou as permissões de acesso.")
+        raise Exception("Não foi possível gerar o relatório. Verifique o período ou o link oficial informado.")
         
     return download.content
 
@@ -86,8 +89,7 @@ if st.button("🚀 Disparar Extração SGCOR", use_container_width=True):
                 d_ini = data_inicio.strftime("%d/%m/%Y")
                 d_fim = data_fim.strftime("%d/%m/%Y")
                 
-                # Executa o motor direto sem depender do Chrome do Linux deles
-                conteudo_excel = extrair_relatorio_sgcor_api_estavel = extrair_relatorio_sgcor_direto(user_sgcor, pass_sgcor, tipo, d_ini, d_fim)
+                conteudo_excel = extrair_relatorio_sgcor_direto(user_sgcor, pass_sgcor, tipo, d_ini, d_fim)
                 
                 nome_final = f"Relatorio_{tipo}_{d_ini.replace('/','-')}.xlsx"
                 
