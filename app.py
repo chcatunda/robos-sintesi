@@ -1,60 +1,66 @@
 import streamlit as st
+import requests
+import re
 import os
-import time
 from datetime import datetime
-from playwright.sync_api import sync_playwright
 
-# --- FUNÇÃO DO ROBÔ SGCOR OFICIAL PARA NUVEM ---
-def executar_download_sgcor(usuario, senha, tipo_relatorio, data_ini, data_fim):
-    # Comando crucial: força o servidor do Streamlit a instalar o navegador interno deles
-    st.info("Configurando navegadores no servidor... Só um momento...")
-    os.system("playwright install chromium")
+# --- FUNÇÃO DO ROBÔ INTEGRADO COMPATÍVEL COM A NUVEM ---
+def extrair_relatorio_sgcor_direto(usuario, senha, tipo_relatorio, data_ini, data_fim):
+    # Cria uma sessão de navegação virtual limpa
+    session = requests.Session()
     
-    with sync_playwright() as p:
-        # Abre o navegador em modo invisível dentro do servidor
-        browser = p.chromium.launch(headless=True, args=["--no-sandbox", "--disable-dev-shm-usage"])
-        context = browser.new_context()
-        page = context.new_page()
+    # URL oficial de login do SGCOR
+    url_base = "https://sistema.sgcor.com.br"
+    url_login = f"{url_base}/login"
+    
+    # Simula o cabeçalho de um navegador real para o SGCOR autorizar o acesso
+    session.headers.update({
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8",
+        "Origin": url_base,
+        "Referer": url_login
+    })
+    
+    # 1. Abre a página inicial para capturar defesas internas do sistema
+    resposta_inicial = session.get(url_login)
+    
+    # Coleta cookies ou tokens se existirem no formulário
+    token_busca = re.search(r'name="_token"\s+value="([^"]+)"', resposta_inicial.text)
+    token_valor = token_busca.group(1) if token_busca else ""
+    
+    payload_login = {
+        "_token": token_valor,
+        "email": usuario,
+        "password": senha
+    }
+    
+    # 2. Faz o Login direto no sistema da Sintesi
+    resposta_autenticacao = session.post(url_login, data=payload_login)
+    
+    # Verifica se o login foi aceito ou se parou na tela de erro
+    if "login" in resposta_autenticacao.url and resposta_inicial.status_code == 200:
+         if "error" in resposta_autenticacao.text or "credenciais" in resposta_autenticacao.text:
+             raise Exception("Usuário ou senha inválidos no SGCOR.")
+    
+    # 3. Define a rota exata de exportação do Excel
+    if tipo_relatorio == "Produção":
+        url_relatorio = f"{url_base}/relatorios/producao-anual/exportar"
+    else:
+        url_relatorio = f"{url_base}/relatorios/comissoes/exportar"
         
-        # 1. Acessa o SGCOR
-        page.goto("https://sistema.sgcor.com.br/login")
-        time.sleep(2)
+    filtros = {
+        "data_inicial": data_ini,
+        "data_final": data_fim,
+        "formato": "excel"
+    }
+    
+    # 4. Solicita a planilha e guarda o resultado direto na memória da nuvem
+    download = session.get(url_relatorio, params=filtros)
+    
+    if download.status_code != 200 or len(download.content) < 1000:
+        raise Exception("Não foi possível gerar o relatório. Verifique o período selecionado ou as permissões de acesso.")
         
-        # 2. Faz o Login
-        page.fill("input[type='email']", usuario)
-        page.fill("input[type='password']", senha)
-        page.click("button[type='submit']")
-        page.wait_for_load_state("networkidle")
-        
-        # 3. Vai para a página de Relatórios
-        page.goto("https://sistema.sgcor.com.br/relatorios")
-        time.sleep(2)
-        
-        if tipo_relatorio == "Produção":
-            page.click("text=Produção Anual")
-        else:
-            page.click("text=Extrato de Comissões")
-        time.sleep(2)
-        
-        # 4. Preenche os campos de data
-        page.locator("#data_inicial").clear()
-        page.locator("#data_inicial").fill(data_ini)
-        page.locator("#data_final").clear()
-        page.locator("#data_final").fill(data_fim)
-        
-        # 5. Captura e gerencia o Download que vai cair na nuvem
-        pasta_download = "/tmp"
-        with page.expect_download() as download_info:
-            page.click("button:has-text('Gerar')")
-        
-        download = download_info.value
-        nome_final = f"Relatorio_{tipo_relatorio}_{data_ini.replace('/','-')}.xlsx"
-        caminho_salvo = os.path.join(pasta_download, nome_final)
-        
-        download.save_as(caminho_salvo)
-        browser.close()
-        
-        return caminho_salvo
+    return download.content
 
 # --- INTERFACE WEB DO STREAMLIT ---
 st.set_page_config(page_title="Sintesi Corretora - SGCOR", page_icon="📊")
@@ -75,22 +81,23 @@ if st.button("🚀 Disparar Extração SGCOR", use_container_width=True):
     if not user_sgcor or not pass_sgcor:
         st.warning("Por favor, preencha seu usuário e senha do SGCOR.")
     else:
-        with st.spinner("O robô está iniciando o navegador e acessando o SGCOR... Aguarde..."):
+        with st.spinner("Conectando ao SGCOR e preparando sua planilha..."):
             try:
                 d_ini = data_inicio.strftime("%d/%m/%Y")
                 d_fim = data_fim.strftime("%d/%m/%Y")
                 
-                # Executa a função oficial
-                caminho_arquivo = executar_download_sgcor(user_sgcor, pass_sgcor, tipo, d_ini, d_fim)
+                # Executa o motor direto sem depender do Chrome do Linux deles
+                conteudo_excel = extrair_relatorio_sgcor_api_estavel = extrair_relatorio_sgcor_direto(user_sgcor, pass_sgcor, tipo, d_ini, d_fim)
                 
-                with open(caminho_arquivo, "rb") as file:
-                    st.success("✅ Relatório gerado com sucesso!")
-                    st.download_button(
-                        label="📥 Clique aqui para Baixar o Arquivo Excel",
-                        data=file,
-                        file_name=os.path.basename(caminho_arquivo),
-                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                        use_container_width=True
-                    )
+                nome_final = f"Relatorio_{tipo}_{d_ini.replace('/','-')}.xlsx"
+                
+                st.success("✅ Relatório gerado com sucesso!")
+                st.download_button(
+                    label="📥 Clique aqui para Baixar o Arquivo Excel",
+                    data=conteudo_excel,
+                    file_name=nome_final,
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    use_container_width=True
+                )
             except Exception as e:
-                st.error(f"❌ Erro na automação: {e}")
+                st.error(f"❌ {e}")
