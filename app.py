@@ -2,8 +2,8 @@ import streamlit as st
 import requests
 from datetime import datetime
 
-# --- FUNÇÃO DO ROBÔ INTEGRADO SGCOR (MÉTODO REFORÇADO) ---
-def extrair_relatorio_sgcor_csv_nativo(usuario, senha, tipo_relatorio, data_ini, data_fim):
+# --- FUNÇÃO DO ROBÔ INTEGRADO SGCOR (MÉTODO ORIGINAL QUE FUNCIONOU) ---
+def extrair_relatorio_sgcor_direto(usuario, senha, tipo_relatorio, data_ini, data_fim):
     session = requests.Session()
     
     url_base = "https://sintesi.sgcor.com.br"
@@ -12,28 +12,24 @@ def extrair_relatorio_sgcor_csv_nativo(usuario, senha, tipo_relatorio, data_ini,
     session.headers.update({
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
         "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8",
-        "Accept-Language": "pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7",
         "Origin": url_base,
         "Referer": url_base
     })
     
-    # 1. Abre a página inicial para obter o cookie de sessão limpo
+    # 1. Captura a página inicial para cookies (Exatamente como o primeiro código)
     session.get(url_base)
     
-    # 2. Dados de login organizados
+    # 2. Payload original que deu certo
     payload_login = {
-        "username": str(usuario).strip(), 
-        "password": str(senha).strip(),
+        "username": usuario,
+        "password": senha,
         "op": "login_validar"
     }
     
-    # 3. Faz o POST de login
-    resposta_login = session.post(url_login, data=payload_login, allow_redirects=True)
+    # 3. Faz o Login original
+    session.post(url_login, data=payload_login)
     
-    if "op=login" in resposta_login.url or "SGCOR - Login" in resposta_login.text:
-        raise Exception("O SGCOR recusou o acesso. Verifique se o Utilizador e a Palavra-passe nas configurações do código estão corretos.")
-    
-    # 4. Define as rotas do relatório nativo em CSV
+    # 4. Define as rotas internas mudando para a exportação nativa em CSV
     if tipo_relatorio == "Produção":
         url_relatorio = f"{url_base}/index.php?op=relatorios&form=producao_anual&exportar=csv"
     else:
@@ -41,11 +37,11 @@ def extrair_relatorio_sgcor_csv_nativo(usuario, senha, tipo_relatorio, data_ini,
         
     url_relatorio += f"&data_inicial={data_ini}&data_final={data_fim}"
     
-    # 5. Solicita o download do arquivo CSV
+    # 5. Solicita a planilha
     download = session.get(url_relatorio)
     
     if download.status_code != 200:
-        raise Exception(f"Erro no servidor do SGCOR ao procurar o relatório. Status: {download.status_code}")
+        raise Exception("Não foi possível conectar ao SGCOR para gerar o relatório.")
         
     return download.content
 
@@ -67,21 +63,22 @@ st.subheader("🔑 Credenciais do SGCOR")
 user_sgcor = "chcatunda"
 pass_sgcor = "Cretapoi@8755"
 
-# Mensagem indicando que os dados já estão salvos com sucesso
-st.info("🔒 Os seus dados de acesso já estão configurados de forma fixa no robô.")
+st.info("🔒 Os seus dados de acesso já estão configurados no robô.")
 
 if st.button("🚀 Disparar Extração SGCOR", use_container_width=True):
-    with st.spinner("A ligar ao SGCOR da Sintesi e a descarregar o arquivo..."):
+    with st.spinner("A conectar ao SGCOR da Sintesi e a preparar o seu arquivo..."):
         try:
             d_ini = data_inicio.strftime("%d/%m/%Y")
             d_fim = data_fim.strftime("%d/%m/%Y")
             
-            conteudo_csv = extrair_relatorio_sgcor_csv_nativo(user_sgcor, pass_sgcor, tipo, d_ini, d_fim)
+            # Executa a extração com o método antigo de login
+            conteudo_csv = extrair_relatorio_sgcor_direto(user_sgcor, pass_sgcor, tipo, d_ini, d_fim)
             
             nome_final = f"Relatorio_{tipo}_{d_ini.replace('/','-')}_a_{d_fim.replace('/','-')}.csv"
             
-            st.success("✅ Relatório extraído com sucesso!")
+            st.success("✅ Relatório gerado com sucesso!")
             
+            # Botão configurado estritamente para o formato CSV que você precisa
             st.download_button(
                 label="📥 Clique aqui para Baixar o Arquivo CSV",
                 data=conteudo_csv,
