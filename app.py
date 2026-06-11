@@ -1,102 +1,66 @@
 import streamlit as st
+import requests
+from bs4 import BeautifulSoup
 import os
-import time
 from datetime import datetime
 
-# Configuração e instalação automática do navegador portátil para a nuvem
-from selenium import webdriver
-from selenium.webdriver.chrome.service import Service
-from selenium.webdriver.common.by import By
-from selenium.webdriver.chrome.options import Options
-from webdriver_manager.chrome import ChromeDriverManager
-
-# --- CONFIGURAÇÃO DA SINTESI ---
+# --- CONFIGURAÇÃO DEFINITIVA DA SINTESI ---
 URL_SGCOR_SINTESI = "https://sintesi.sgcor.com.br"
 
-# --- FUNÇÃO DO ROBÔ NAVEGADOR COM SELENIUM ---
-def executar_download_sgcor(usuario, senha, tipo_relatorio, data_ini, data_fim):
-    # Configura o navegador para rodar de forma ultra-leve e sem interface gráfica
-    chrome_options = Options()
-    chrome_options.add_argument("--headless=new")
-    chrome_options.add_argument("--no-sandbox")
-    chrome_options.add_argument("--disable-dev-shm-usage")
-    chrome_options.add_argument("--disable-gpu")
-    chrome_options.add_argument("user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+# --- FUNÇÃO DO ROBÔ VIA REQUISIÇÃO COM COOKIES INTELIGENTES ---
+def extrair_relatorio_sgcor_api(usuario, senha, tipo_relatorio, data_ini, data_fim):
+    # Cria uma sessão que imita o comportamento de salvar cookies de um navegador real
+    session = requests.Session()
     
-    # Define a pasta de downloads temporária dentro do servidor
-    pasta_download = "/tmp"
-    prefs = {"download.default_directory": pasta_download}
-    chrome_options.add_experimental_option("prefs", prefs)
+    # Se disfarça completamente de um navegador Google Chrome atualizado
+    session.headers.update({
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8",
+        "Accept-Language": "pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7",
+        "Referer": f"{URL_SGCOR_SINTESI}/login"
+    })
     
-    # Inicializa o navegador portátil
-    servico = Service(ChromeDriverManager().install())
-    driver = webdriver.Chrome(service=servico, options=chrome_options)
+    # PASSO 1: Abre a página de login para capturar o token de segurança oculto (CSRF)
+    url_tela_login = f"{URL_SGCOR_SINTESI}/login"
+    resposta_tela = session.get(url_tela_login)
     
-    try:
-        # 1. Acessa a tela de login da Sintesi
-        driver.get(f"{URL_SGCOR_SINTESI}/login")
-        time.sleep(3)
+    # Varre a página procurando pelo código de segurança do SGCOR
+    soup = BeautifulSoup(resposta_tela.text, 'html.parser')
+    token_oculto = soup.find('input', {'name': '_token'})
+    token_valor = token_oculto['value'] if token_oculto else ''
+    
+    # PASSO 2: Prepara os dados de login exatamente no formato que o formulário do SGCOR pede
+    payload_login = {
+        "_token": token_valor,
+        "email": usuario,        # O SGCOR pode ler o campo como email ou usuário
+        "usuario": usuario,
+        "password": senha
+    }
+    
+    # Envia os dados para efetuar o login e validar a sessão
+    resposta_login = session.post(url_tela_login, data=payload_login)
+    
+    # PASSO 3: Mapeia o link de exportação do Excel dentro da Sintesi
+    if tipo_relatorio == "Produção":
+        url_exportar = f"{URL_SGCOR_SINTESI}/relatorios/producao-anual/exportar"
+    else:
+        url_exportar = f"{URL_SGCOR_SINTESI}/relatorios/comissoes/exportar"
         
-        # 2. Preenche Usuário e Senha
-        driver.find_element(By.NAME, "email").send_keys(usuario)
-        driver.find_element(By.NAME, "password").send_keys(senha)
+    # Parâmetros de filtro que você selecionou na tela
+    filtros = {
+        "data_inicial": data_ini,
+        "data_final": data_fim,
+        "formato": "excel"
+    }
+    
+    # PASSO 4: Solicita o download do arquivo usando a sessão autenticada
+    download = session.get(url_exportar, params=filtros)
+    
+    # Se o download falhar ou voltar para a tela de login, significa erro de credenciais
+    if download.status_code != 200 or "login" in download.url:
+        raise Exception("O SGCOR recusou o acesso. Certifique-se de que seu Usuário e Senha estão corretos e tente novamente.")
         
-        # 3. Clica no botão de Entrar
-        driver.find_element(By.CSS_SELECTOR, "button[type='submit']").click()
-        time.sleep(5)
-        
-        # Se o login falhar, avisa na tela
-        if "/login" in driver.current_url:
-            raise Exception("Falha no login. Verifique se o seu usuário ou a senha estão corretos no SGCOR.")
-            
-        # 4. Vai direto para a página do relatório selecionado
-        if tipo_relatorio == "Produção":
-            url_relatorio = f"{URL_SGCOR_SINTESI}/relatorios/producao-anual"
-        else:
-            url_relatorio = f"{URL_SGCOR_SINTESI}/relatorios/comissoes"
-            
-        driver.get(url_relatorio)
-        time.sleep(4)
-        
-        # 5. Preenche os campos de data
-        driver.find_element(By.NAME, "data_inicial").clear()
-        driver.find_element(By.NAME, "data_inicial").send_keys(data_ini)
-        driver.find_element(By.NAME, "data_final").clear()
-        driver.find_element(By.NAME, "data_final").send_keys(data_fim)
-        
-        # 6. Dispara o download clicando no botão gerador
-        # Procura por botões comuns do SGCOR como "Exportar" ou "Gerar"
-        botoes = driver.find_elements(By.CSS_SELECTOR, "button, input[type='submit']")
-        clicou = False
-        for botao in botoes:
-            texto = botao.text or botao.get_attribute("value")
-            if texto and any(palavra in texto.lower() for palabra in ["exportar", "gerar"]):
-                botao.click()
-                clicou = True
-                break
-                
-        if not clicou:
-            # Clique de segurança caso não ache pelo texto
-            driver.find_element(By.CSS_SELECTOR, "form button, form input[type='submit']").click()
-            
-        # Aguarda o download ser processado pelo servidor
-        time.sleep(6)
-        
-        caminho_final = os.path.join(pasta_download, "RELAÇAO DE CLIENTES ATIVOS.xlsx")
-        
-        # Como o SGCOR gera nomes variados, procura o arquivo baixado na pasta /tmp
-        arquivos = os.listdir(pasta_download)
-        for arquivo in arquivos:
-            if arquivo.endswith(".xlsx"):
-                os.rename(os.path.join(pasta_download, arquivo), caminho_final)
-                break
-                
-        driver.quit()
-        return caminho_final
-        
-    except Exception as e:
-        driver.quit()
-        raise e
+    return download.content
 
 # --- INTERFACE WEB DO STREAMLIT ---
 st.set_page_config(page_title="Sintesi Corretora - SGCOR", page_icon="📊")
@@ -120,23 +84,26 @@ if st.button("🚀 Disparar Extração SGCOR", use_container_width=True):
     if not user_sgcor or not pass_sgcor:
         st.warning("Por favor, preencha seu usuário e senha do SGCOR.")
     else:
-        with st.spinner("Conectando de forma portátil ao SGCOR da Sintesi... Aguarde..."):
+        with st.spinner("Conectando ao SGCOR de forma segura e gerando sua planilha..."):
             try:
                 d_ini = data_inicio.strftime("%d/%m/%Y")
                 d_fim = data_fim.strftime("%d/%m/%Y")
                 
-                # Executa o novo robô portátil
-                arquivo_gerado = executar_download_sgcor(user_sgcor, pass_sgcor, tipo, d_ini, d_fim)
+                # Executa a extração direta ultra-rápida
+                conteudo_excel = extrair_relatorio_sgcor_api(user_sgcor, pass_sgcor, tipo, d_ini, d_fim)
                 
-                with open(arquivo_gerado, "rb") as file:
-                    st.success("✅ Relatório gerado com sucesso!")
-                    st.write("👉 Clique no botão abaixo para baixar seu arquivo formatado:")
-                    st.download_button(
-                        label="📥 Clique aqui para Baixar o Arquivo Excel",
-                        data=file,
-                        file_name="RELAÇAO DE CLIENTES ATIVOS.xlsx",
-                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                        use_container_width=True
-                    )
+                # Define o nome que você solicitou para salvar no Drive
+                nome_final = "RELAÇAO DE CLIENTES ATIVOS.xlsx"
+                
+                st.success("✅ Relatório gerado com sucesso!")
+                st.write("👉 Clique no botão abaixo para baixar seu arquivo formatado. Depois, basta jogá-lo no seu Google Drive!")
+                
+                st.download_button(
+                    label="📥 Clique aqui para Baixar o Arquivo Excel",
+                    data=conteudo_excel,
+                    file_name=nome_final,
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    use_container_width=True
+                )
             except Exception as e:
-                st.error(f"❌ Erro na automação: {e}")
+                st.error(f"❌ {e}")
