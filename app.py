@@ -64,6 +64,7 @@ st.divider()
 st.subheader("🔑 Credenciais do SGCOR")
 
 # 🔒 COLOQUE SEU USUÁRIO E SENHA DA SINTESI AQUI DENTRO DAS ASPAS:
+# 🔒 COLOQUE SEU USUÁRIO E SENHA DA SINTESI AQUI DENTRO DAS ASPAS:
 user_sgcor = "chcatunda"
 pass_sgcor = "Cretapoi@8755"
 
