@@ -4,7 +4,8 @@ from datetime import datetime
 
 # --- FUNÇÃO DO ROBÔ INTEGRADO SGCOR (MÉTODO REFORÇADO) ---
 def extrair_relatorio_sgcor_csv_nativo(usuario, senha, tipo_relatorio, data_ini, data_fim):
-    session = requests.Session()a
+    session = requests.Session()
+    
     url_base = "https://sintesi.sgcor.com.br"
     url_login = f"{url_base}/index.php?op=login"
     
@@ -16,7 +17,7 @@ def extrair_relatorio_sgcor_csv_nativo(usuario, senha, tipo_relatorio, data_ini,
         "Referer": url_base
     })
     
-    # 1. Abre a página inicial para pegar o cookie de sessão limpo
+    # 1. Abre a página inicial para obter o cookie de sessão limpo
     session.get(url_base)
     
     # 2. Dados de login organizados
@@ -30,7 +31,7 @@ def extrair_relatorio_sgcor_csv_nativo(usuario, senha, tipo_relatorio, data_ini,
     resposta_login = session.post(url_login, data=payload_login, allow_redirects=True)
     
     if "op=login" in resposta_login.url or "SGCOR - Login" in resposta_login.text:
-        raise Exception("O SGCOR recusou o acesso. Verifique se o Usuário e Senha nas configurações do código estão corretos.")
+        raise Exception("O SGCOR recusou o acesso. Verifique se o Utilizador e a Palavra-passe nas configurações do código estão corretos.")
     
     # 4. Define as rotas do relatório nativo em CSV
     if tipo_relatorio == "Produção":
@@ -44,7 +45,7 @@ def extrair_relatorio_sgcor_csv_nativo(usuario, senha, tipo_relatorio, data_ini,
     download = session.get(url_relatorio)
     
     if download.status_code != 200:
-        raise Exception(f"Erro no servidor do SGCOR ao buscar o relatório. Status: {download.status_code}")
+        raise Exception(f"Erro no servidor do SGCOR ao procurar o relatório. Status: {download.status_code}")
         
     return download.content
 
@@ -52,7 +53,7 @@ def extrair_relatorio_sgcor_csv_nativo(usuario, senha, tipo_relatorio, data_ini,
 st.set_page_config(page_title="Sintesi Corretora - SGCOR", page_icon="📊")
 
 st.title("📊 Extrator de Relatórios SGCOR")
-st.write("Acesse e baixe seus relatórios direto pelo seu navegador.")
+st.write("Aceda e descarregue os seus relatórios direto pelo seu navegador.")
 
 tipo = st.selectbox("Qual relatório deseja?", ["Produção", "Comissões"])
 
@@ -62,16 +63,15 @@ data_fim = st.date_input("Data Final", datetime.today())
 st.divider()
 st.subheader("🔑 Credenciais do SGCOR")
 
-# 🔒 COLOQUE SEU USUÁRIO E SENHA DA SINTESI AQUI DENTRO DAS ASPAS:
-# 🔒 COLOQUE SEU USUÁRIO E SENHA DA SINTESI AQUI DENTRO DAS ASPAS:
+# 🔒 CREDENCIAIS CONFIGURADAS DIRETAMENTE NO SISTEMA:
 user_sgcor = "chcatunda"
 pass_sgcor = "Cretapoi@8755"
 
-# Mensagem apenas indicando que as credenciais já estão salvas no sistema
-st.info("🔒 Seus dados de acesso já estão configurados no robô.")
+# Mensagem indicando que os dados já estão salvos com sucesso
+st.info("🔒 Os seus dados de acesso já estão configurados de forma fixa no robô.")
 
 if st.button("🚀 Disparar Extração SGCOR", use_container_width=True):
-    with st.spinner("Conectando ao SGCOR da Sintesi e baixando o arquivo..."):
+    with st.spinner("A ligar ao SGCOR da Sintesi e a descarregar o arquivo..."):
         try:
             d_ini = data_inicio.strftime("%d/%m/%Y")
             d_fim = data_fim.strftime("%d/%m/%Y")
