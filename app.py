@@ -1,36 +1,35 @@
 import streamlit as st
 import requests
-import io
+import os
 from datetime import datetime
 
-# --- FUNÇÃO DO ROBÔ SGCOR VIA REQUISIÇÃO DIRETA NA MEMÓRIA ---
+# --- CONFIGURAÇÃO DEFINITIVA DA SINTESI ---
+URL_SGCOR_SINTESI = "https://sintesi.sgcor.com.br"
+
+# --- FUNÇÃO DO ROBÔ SGCOR VIA REQUISIÇÃO DIRETA ---
 def extrair_relatorio_sgcor_api(usuario, senha, tipo_relatorio, data_ini, data_fim):
-    # Cria uma sessão de navegação virtual limpa
     session = requests.Session()
     
-    # Descobre o domínio correto do SGCOR com base no e-mail digitado
-    dominio_base = "sgcor.com.br"
-    if "@" in usuario:
-        empresa = usuario.split("@")[1].split(".")[0]
-        # Se for um e-mail corporativo (não comercial), tenta o subdomínio correspondente
-        if empresa not in ["gmail", "outlook", "hotmail", "yahoo", "live"]:
-            dominio_base = f"{empresa}.sgcor.com.br"
-
-    # URL de login ajustada dinamicamente
-    url_login = f"https://{dominio_base}/login" 
+    # URL de login exata da Sintesi
+    url_login = f"{URL_SGCOR_SINTESI}/login" 
+    
+    # Envia os dados simulando o formulário padrão do SGCOR
     payload_login = {
         "email": usuario,
-        "password": senha
+        "usuario": usuario,
+        "login": usuario,
+        "password": senha,
+        "senha": senha
     }
     
-    # Realiza o Login no sistema da corretora
+    # Realiza o Login no SGCOR
     response = session.post(url_login, data=payload_login)
     
-    # Define as URLs dos relatórios com base no tipo selecionado
+    # Mapeamento exato dos links de exportação do sistema da Sintesi
     if tipo_relatorio == "Produção":
-        url_relatorio = f"https://{dominio_base}/relatorios/producao-anual/exportar"
+        url_relatorio = f"{URL_SGCOR_SINTESI}/relatorios/producao-anual/exportar"
     else:
-        url_relatorio = f"https://{dominio_base}/relatorios/comissoes/exportar"
+        url_relatorio = f"{URL_SGCOR_SINTESI}/relatorios/comissoes/exportar"
         
     filtros = {
         "data_inicial": data_ini,
@@ -38,11 +37,11 @@ def extrair_relatorio_sgcor_api(usuario, senha, tipo_relatorio, data_ini, data_f
         "formato": "excel"
     }
     
-    # Solicita o download e guarda o conteúdo direto na memória (evita travar o disco local)
+    # Solicita o download do relatório para a memória do servidor
     download = session.get(url_relatorio, params=filtros)
     
     if download.status_code != 200:
-        raise Exception("Não foi possível conectar ao SGCOR. Verifique se o e-mail ou a senha estão corretos.")
+        raise Exception("Não foi possível extrair o relatório. Verifique se o seu usuário ou senha do SGCOR estão corretos.")
         
     return download.content
 
@@ -52,30 +51,36 @@ st.set_page_config(page_title="Sintesi Corretora - SGCOR", page_icon="📊")
 st.title("📊 Extrator de Relatórios SGCOR")
 st.write("Acesse e baixe seus relatórios direto pelo celular, tablet ou computador.")
 
+st.divider()
+st.subheader("📋 Configuração do Relatório")
 tipo = st.selectbox("Qual relatório deseja?", ["Produção", "Comissões"])
 data_inicio = st.date_input("Data Inicial", datetime.today())
 data_fim = st.date_input("Data Final", datetime.today())
 
 st.divider()
-st.subheader("🔑 Credenciais do SGCOR")
-user_sgcor = st.text_input("E-mail de Login")
+st.subheader("🔑 Credenciais de Acesso")
+user_sgcor = st.text_input("Usuário / Login (Código, CPF ou Usuário normal)")
 pass_sgcor = st.text_input("Senha de Acesso", type="password")
 
+st.divider()
 if st.button("🚀 Disparar Extração SGCOR", use_container_width=True):
     if not user_sgcor or not pass_sgcor:
         st.warning("Por favor, preencha seu usuário e senha do SGCOR.")
     else:
-        with st.spinner("Conectando ao SGCOR e gerando sua planilha..."):
+        with st.spinner("Conectando ao SGCOR da Sintesi e gerando sua planilha..."):
             try:
                 d_ini = data_inicio.strftime("%d/%m/%Y")
                 d_fim = data_fim.strftime("%d/%m/%Y")
                 
-                # Executa a extração direto para a memória do navegador
+                # Executa a extração usando a URL calibrada da Sintesi
                 conteudo_excel = extrair_relatorio_sgcor_api(user_sgcor, pass_sgcor, tipo, d_ini, d_fim)
                 
-                nome_final = f"Relatorio_{tipo}_{d_ini.replace('/','-')}.xlsx"
+                # Define o nome exato solicitado por você
+                nome_final = "RELAÇAO DE CLIENTES ATIVOS.xlsx"
                 
                 st.success("✅ Relatório gerado com sucesso!")
+                st.write("👉 Clique no botão abaixo para baixar. Depois, basta arrastar o arquivo para dentro da sua pasta do Google Drive!")
+                
                 st.download_button(
                     label="📥 Clique aqui para Baixar o Arquivo Excel",
                     data=conteudo_excel,
